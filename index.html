@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="zh-Hant">
+ <head>
+  <meta charset="UTF-8">
+  <title>【文特知識王】— 雲端匯入與大螢幕優化版</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* === 核心樣式設定 === */
+    html, body {
+      height: 100dvh; /* 使用 dvh 避免大螢幕/手機瀏覽器上下工具列遮擋 */
+      width: 100vw;
+      background: #111;
+      overflow: hidden;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+      user-select: none;
+      -webkit-user-select: none;
+      touch-action: none; /* 關鍵：徹底禁止大螢幕預設的縮放與滑動(如上一頁)行為 */
+    }
+    
+    #stage { 
+      overflow: hidden;
+      box-shadow: 0 0 80px rgba(0,0,0,0.8);
+    }
+
+    .dragging { 
+      pointer-events: none;
+      position: fixed;
+      z-index: 9999; 
+      opacity: 0.95; 
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2);
+      will-change: transform;
+      transform-origin: center;
+      margin: 0 !important;
+    }
+
+    .item-card {
+      touch-action: none; /* 確保卡片拖曳時不會觸發網頁滾動 */
+      will-change: transform;
+    }
+    
+    @keyframes correctPop { 
+      0%{transform:scale(0.8); opacity: 0.5;} 
+      50%{transform:scale(1.15);} 
+      100%{transform:scale(1); opacity: 1;} 
+    }
+    .correct-anim { animation: correctPop 400ms cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+    
+    @keyframes zoneGlow {
+      0% { box-shadow: 0 0 0 0 rgba(34,197,94,0); border-color: rgba(255,255,255,1); }
+      50% { box-shadow: 0 0 40px 10px rgba(34,197,94,0.4); border-color: rgba(34,197,94,0.8); }
+      100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); border-color: rgba(255,255,255,1); }
+    }
+    .zone-glow-anim { animation: zoneGlow 600ms ease-out; }
+
+    @keyframes wrongShake { 
+      0%,100%{transform:translateX(0) rotate(0);} 
+      20%{transform:translateX(-12px) rotate(-2deg);} 
+      40%{transform:translateX(12px) rotate(2deg);} 
+      60%{transform:translateX(-8px) rotate(-1deg);} 
+      80%{transform:translateX(8px) rotate(1deg);} 
+    }
+    .wrong-anim { animation: wrongShake 400ms ease-in-out; }
+
+    /* 隱藏捲軸，但保留滑動功能 (針對觸控螢幕優化) */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;  /* IE and Edge */
+      scrollbar-width: none;  /* Firefox */
+    }
+  </style>
+ </head>
+ <body class="antialiased">
+  
+  <div id="stage" class="relative w-full h-full bg-gradient-to-br from-sky-200 via-pink-100 to-amber-100 flex flex-col items-center">
+    
+    <div class="pointer-events-none absolute -top-16 -left-16 w-80 h-80 rounded-full bg-pink-300/30 blur-3xl z-0"></div>
+    <div class="pointer-events-none absolute -bottom-10 -right-10 w-96 h-96 rounded-full bg-sky-300/30 blur-3xl z-0"></div>
+
+    <div class="w-full h-full max-w-[1600px] flex flex-col relative z-10">
+      
+      <div class="h-16 md:h-24 lg:h-28 flex items-center justify-between px-3 md:px-10 z-50 shrink-0">
+       <div class="flex items-center gap-2 md:gap-4 w-full md:w-auto overflow-hidden">
+ 
+        <div id="mainTitle" class="text-white/90 bg-gradient-to-r from-fuchsia-500 to-rose-500 px-3 py-1.5 md:px-5 md:py-2 rounded-lg md:rounded-2xl shadow-lg text-base md:text-3xl lg:text-4xl font-extrabold tracking-wide truncate max-w-[140px] sm:max-w-xs md:max-w-none">
+          【文特知識王】
+        </div>
+        <div id="scoreBox" class="play-only text-fuchsia-700 bg-white/80 backdrop-blur px-2 md:px-4 py-1.5 md:py-2 rounded-lg md:rounded-xl shadow text-sm md:text-2xl lg:text-3xl font-bold transition-all shrink-0">
+          分數：<span id="score">0</span>
+        </div>
+        <div id="timerBox" class="play-only text-sky-700 bg-white/80 backdrop-blur px-2 md:px-4 py-1.5 md:py-2 rounded-lg md:rounded-xl shadow text-sm md:text-2xl lg:text-3xl font-bold shrink-0">
+          時間：<span id="timer">00:00</span>
+        </div>
+        <div id="saveIndicator" class="admin-only hidden text-emerald-700 bg-emerald-100 px-2 py-1 md:px-4 md:py-2 rounded-lg md:rounded-xl text-sm md:text-xl font-bold opacity-0 transition-opacity">
+          已儲存
+        </div>
+       </div>
+       
+       <div class="flex items-center gap-1 md:gap-2 bg-white/80 backdrop-blur rounded-lg md:rounded-2xl p-1 shadow-lg shrink-0 ml-2">
+         <button id="tabPlay" class="px-3 py-1.5 md:px-5 md:py-2 lg:px-6 lg:py-3 rounded-md md:rounded-xl text-sm md:text-xl lg:text-2xl font-extrabold text-slate-700 hover:bg-slate-100 data-[active=true]:bg-slate-900 data-[active=true]:text-white transition-colors" data-active="true">
+           🎮 <span class="hidden sm:inline">開始遊戲</span>
+         </button> 
+         <button id="tabAdmin" class="px-3 py-1.5 md:px-5 md:py-2 lg:px-6 lg:py-3 rounded-md md:rounded-xl text-sm md:text-xl lg:text-2xl font-extrabold text-slate-700 hover:bg-slate-100 data-[active=true]:bg-slate-900 data-[active=true]:text-white transition-colors">
+           ⚙️ <span class="hidden sm:inline">設定後台</span>
+         </button>
+       </div>
+      </div>
+
+      <div id="toast" class="pointer-events-none hidden fixed top-20 md:top-28 lg:top-36 left-1/2 -translate-x-1/2 z-[60] bg-rose-500 text-white text-xl md:text-3xl font-extrabold px-4 md:px-6 py-2 md:py-3 rounded-xl md:rounded-2xl shadow-2xl transition-all"></div>
+
+      <div id="playView" class="flex-1 flex flex-col z-10 min-h-0 w-full relative">
+        <div class="px-3 md:px-10 pt-2 md:pt-4 flex-1 flex flex-col min-h-0">
+          <div class="flex items-center justify-between mb-2 md:mb-4 shrink-0">
+            <div class="bg-white/80 backdrop-blur rounded-xl md:rounded-2xl shadow p-1 flex items-center">
+              <span class="pl-2 pr-1 md:pl-3 md:pr-2 text-slate-500 font-bold text-sm md:text-lg lg:text-xl">文字：</span>
+              <button data-size="S" class="size-btn px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-sm md:text-base font-bold text-slate-700 hover:bg-slate-100 transition-colors">小</button> 
+              <button data-size="M" class="size-btn px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-base md:text-lg font-bold text-slate-700 hover:bg-slate-100 transition-colors">中</button> 
+              <button data-size="L" class="size-btn px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl text-lg md:text-xl font-extrabold text-slate-700 hover:bg-slate-100 transition-colors">大</button>
+            </div>
+            <button id="resetBtn" class="px-4 py-1.5 md:px-5 md:py-2 lg:px-8 lg:py-3 rounded-xl md:rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-base md:text-2xl lg:text-3xl font-extrabold shadow-lg active:scale-[0.98] transition-transform"> 🔄 重玩 </button>
+          </div>
+          <div id="zonesArea" class="w-full flex-1 min-h-0 grid gap-3 md:gap-6 mb-3 md:mb-6"></div>
+        </div>
+
+        <div class="h-[35%] md:h-[35%] min-h-[140px] md:min-h-[200px] bg-white/70 backdrop-blur border-t border-white/60 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] relative shrink-0 rounded-t-3xl md:rounded-t-[3rem]">
+          <div class="absolute inset-0 px-4 py-4 md:px-10 md:py-8 lg:py-10 overflow-y-auto overflow-x-hidden no-scrollbar">
+            <div id="itemsTrayInner" class="flex flex-wrap items-start justify-center md:justify-start content-start gap-3 md:gap-4 lg:gap-6 pb-16 md:pb-10"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="adminView" class="hidden flex-1 z-20 overflow-hidden w-full relative">
+        <div class="absolute inset-0 px-3 md:px-10 py-4 md:py-8 w-full h-full flex flex-col md:grid md:grid-cols-[280px_1fr] gap-4 md:gap-6 overflow-hidden">
+          <div class="shrink-0 md:h-full bg-white/80 backdrop-blur rounded-xl md:rounded-2xl border border-white/60 shadow p-3 md:p-4 overflow-x-auto flex flex-row md:flex-col gap-2 md:gap-0">
+            <div class="hidden md:block text-2xl font-extrabold text-slate-800 mb-3">CMS 控制台</div>
+            <nav class="flex md:block w-full gap-2 md:space-y-2">
+              <button data-admin-section="zones" class="admin-nav whitespace-nowrap text-sm md:text-base w-full text-center md:text-left px-3 py-2 md:px-4 md:py-3 rounded-lg md:rounded-xl font-bold bg-sky-100 text-sky-800 transition-colors">分類設定</button> 
+              <button data-admin-section="items" class="admin-nav whitespace-nowrap text-sm md:text-base w-full text-center md:text-left px-3 py-2 md:px-4 md:py-3 rounded-lg md:rounded-xl font-bold hover:bg-slate-100 transition-colors">項目設定</button> 
+              <button data-admin-section="settings" class="admin-nav whitespace-nowrap text-sm md:text-base w-full text-center md:text-left px-3 py-2 md:px-4 md:py-3 rounded-lg md:rounded-xl font-bold hover:bg-slate-100 transition-colors">系統與雲端</button>
+            </nav>
+          </div>
+          <div class="flex-1 md:h-full bg-white/70 backdrop-blur rounded-xl md:rounded-2xl border border-white/60 shadow p-4 md:p-5 overflow-y-auto no-scrollbar">
+            <section id="cmsZones" class="cms-section">
+              <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl md:text-3xl font-extrabold text-sky-700">分類區管理</h2>
+                <button id="addZone" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl bg-sky-500 hover:bg-sky-600 text-white text-sm md:text-lg font-bold shadow transition-colors">+ 新增分類</button>
+              </div>
+              <div id="zonesList" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+            </section>
+            <section id="cmsItems" class="cms-section hidden">
+              <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl md:text-3xl font-extrabold text-fuchsia-700">項目管理</h2>
+                <button id="addItem" class="px-3 py-1.5 md:px-4 md:py-2 rounded-lg md:rounded-xl bg-fuchsia-500 hover:bg-fuchsia-600 text-white text-sm md:text-lg font-bold shadow transition-colors">+ 新增項目</button>
+              </div>
+              <div id="itemsList" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+            </section>
+            <section id="cmsSettings" class="cms-section hidden space-y-4 md:space-y-6">
+              <div class="bg-white rounded-xl md:rounded-2xl border p-4 md:p-6 shadow-sm">
+                <h3 class="text-lg md:text-2xl font-bold text-slate-800 mb-4">一般設定</h3>
+                <div class="flex flex-col md:flex-row md:items-center gap-2 md:gap-4">
+                  <label class="text-base md:text-lg font-bold text-slate-700 shrink-0">遊戲名稱：</label>
+                  <input id="titleInput" type="text" class="flex-1 max-w-md border border-slate-300 focus:border-sky-500 outline-none rounded-lg md:rounded-xl p-2 md:p-3 text-base md:text-lg font-bold transition-colors">
+                </div>
+              </div>
+
+              <div class="bg-sky-50 rounded-xl md:rounded-2xl border border-sky-200 p-4 md:p-6 shadow-sm">
+                <h3 class="text-lg md:text-2xl font-bold text-sky-800 mb-4 flex items-center gap-2">☁️ 雲端題庫快速載入</h3>
+                <div class="flex flex-col md:flex-row items-center gap-3 md:gap-4">
+                  <select id="cloudImportSelect" class="w-full md:flex-1 border border-sky-300 outline-none rounded-lg md:rounded-xl p-2 md:p-3 text-base font-bold text-slate-700 cursor-pointer hover:bg-white transition-colors shadow-inner">
+                    <option value="">-- 請選擇 GitHub 上的題庫檔案 --</option>
+                    <option value="拖曳遊戲水果動物交通3X2(11502).json">水果動物交通 (3X2 版)</option>
+                    <option value="拖曳遊戲水果動物交通3X4(1150428).json">水果動物交通 (3X4 版)</option>
+                  </select>
+                  <div class="text-sm text-sky-600 font-medium">※ 選擇後將自動覆蓋目前進度</div>
+                </div>
+              </div>
+
+              <div class="bg-white rounded-xl md:rounded-2xl border p-4 md:p-6 shadow-sm">
+                <h3 class="text-lg md:text-2xl font-bold text-slate-800 mb-4">資料備份與重置</h3>
+                <div class="flex flex-col md:flex-row gap-3 md:gap-4">
+                  <button id="exportBtn" class="px-4 py-2 md:px-5 md:py-3 rounded-lg md:rounded-xl bg-emerald-500 text-white font-bold hover:bg-emerald-600 shadow transition-colors text-center">📥 下載設定檔</button>
+                  <label class="px-4 py-2 md:px-5 md:py-3 rounded-lg md:rounded-xl bg-slate-200 text-slate-700 font-bold hover:bg-slate-300 shadow cursor-pointer transition-colors text-center relative">
+                    <span id="importText">📤 匯入設定檔</span>
+                    <input id="importInput" type="file" accept=".json,application/json" class="hidden">
+                  </label>
+                  <button id="clearAllBtn" class="px-4 py-2 md:px-5 md:py-3 rounded-lg md:rounded-xl bg-rose-500 text-white font-bold hover:bg-rose-600 shadow md:ml-auto transition-colors text-center">⚠️ 清除所有資料</button>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+
+      <div id="finishModal" class="hidden absolute inset-0 bg-black/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4">
+       <div class="bg-white rounded-[2rem] shadow-2xl p-6 md:p-10 w-full max-w-2xl text-center transform transition-transform duration-300 scale-100">
+        <div class="text-3xl md:text-5xl font-extrabold text-emerald-600 mb-4 md:mb-6">🎉 恭喜過關！</div>
+        <div class="text-xl md:text-3xl text-slate-700 mb-6 md:mb-8 font-bold">
+          得分：<span id="finalScore" class="text-fuchsia-600">0</span>　
+          時間：<span id="finalTime" class="text-sky-600">00:00</span>
+        </div>
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-6">
+          <button id="playAgain" class="w-full sm:w-auto px-6 py-3 md:px-8 md:py-4 rounded-xl md:rounded-2xl bg-amber-500 hover:bg-amber-600 text-white text-xl md:text-3xl font-extrabold shadow-lg transition-transform hover:scale-105">再玩一次</button> 
+          <button id="closeModal" class="w-full sm:w-auto px-6 py-3 md:px-8 md:py-4 rounded-xl md:rounded-2xl bg-slate-200 hover:bg-slate-300 text-slate-700 text-lg md:text-2xl font-bold shadow transition-colors">關閉</button>
+        </div>
+       </div>
+      </div>
+
+      <div id="confetti" class="pointer-events-none absolute inset-0 overflow-hidden z-[65]"></div>
+    </div>
+  </div>
+
+  <script>
+    // ===== 1. 基礎工具與常數 =====
+    const $ = (s, c=document) => c.querySelector(s);
+    const $$ = (s, c=document) => Array.from(c.querySelectorAll(s));
+    const uid = () => 'id_' + Math.random().toString(36).slice(2, 9);
+    
+    const LS_KEY = 'wtkw_config_v2';
+    const LS_STATE = 'wtkw_state_v2';
+
+    const GAME_RULES = {
+      SCORE_PER_ITEM: 10,
+      MSG_WRONG: '再試一次！'
+    };
+    function sampleSVG(emoji, bg) {
+      const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='200' height='150'><rect rx='24' ry='24' width='100%' height='100%' fill='${bg}'/><text x='50%' y='54%' dominant-baseline='middle' text-anchor='middle' font-size='72'>${emoji}</text></svg>`;
+      return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+    }
+
+    const defaultConfig = {
+      gameTitle: '【文特知識王】',
+      textSize: 'L',
+      zones: [
+        { id: uid(), name: '水果', imageData: sampleSVG('🍎', '#ff7a7a') },
+        { id: uid(), name: '動物', imageData: sampleSVG('🐶', '#7ad3ff') },
+        { id: uid(), name: '交通', imageData: sampleSVG('🚗', '#ffd166') },
+      ],
+      items: [
+        { id: uid(), name: '蘋果', imageData: sampleSVG('🍎', '#ff7a7a'), correctZoneId: null },
+        { id: uid(), name: '狗狗', imageData: sampleSVG('🐶', '#7ad3ff'), correctZoneId: null },
+        { id: uid(), name: '小汽車', imageData: sampleSVG('🚗', '#ffd166'), correctZoneId: null },
+      ]
+    };
+    const defaultState = {
+      mode: 'play',
+      score: 0,
+      locked: {},
+      placements: {},
+      timerStart: null,
+      elapsed: 0,
+      finished: false
+    };
+    function saveConfig(forceResetState = false) { 
+      localStorage.setItem(LS_KEY, JSON.stringify(config)); 
+      showSavedPulse();
+      if (forceResetState) {
+        state = structuredClone(defaultState);
+        saveState();
+      }
+    }
+    
+    function saveState() { 
+      localStorage.setItem(LS_STATE, JSON.stringify(state));
+    }
+    
+    function loadAll() {
+      let conf = JSON.parse(localStorage.getItem(LS_KEY) || 'null');
+      if (!conf) conf = structuredClone(defaultConfig);
+      let st = JSON.parse(localStorage.getItem(LS_STATE) || 'null');
+      if (!st) st = structuredClone(defaultState);
+      return { conf, st };
+    }
+
+    let { conf: config, st: state } = loadAll();
+    function compressImage(base64Str, maxWidth, maxHeight, callback) {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width, height = img.height;
+        if (width > maxWidth || height > maxHeight) {
+          const ratio = Math.min(maxWidth / width, maxHeight / height);
+          width *= ratio; height *= ratio;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        callback(canvas.toDataURL('image/webp', 0.8));
+      };
+      img.src = base64Str;
+    }
+
+    function loadImageFile(input, cb) {
+      const f = input.files[0];
+      if(!f) return;
+      const fr = new FileReader();
+      fr.onload = (e) => {
+        compressImage(e.target.result, 400, 400, (compressedData) => { cb(compressedData); });
+      };
+      fr.readAsDataURL(f);
+    }
+
+    // ===== 2. 核心 UI 渲染 =====
+    function applyGameTitle() {
+      $('#mainTitle').textContent = config.gameTitle || '【文特知識王】';
+      document.title = (config.gameTitle || '【文特知識王】');
+    }
+
+    function renderPlay() {
+      applyTextSize(config.textSize);
+      applyGameTitle();
+      updateScoreUI();
+      $('#timer').textContent = formatTime(getElapsed());
+
+      const zonesArea = $('#zonesArea');
+      zonesArea.innerHTML = '';
+      if (config.zones.length === 0) {
+        zonesArea.innerHTML = `<div class="w-full h-full flex items-center justify-center text-slate-400 font-bold text-xl md:text-3xl">目前無內容，請至後台設定。</div>`;
+        return;
+      }
+
+      // 依照分類數量動態決定排版，避免畫面擁擠破版
+      const cols = config.zones.length;
+      zonesArea.className = `w-full flex-1 min-h-0 grid gap-2 md:gap-4 lg:gap-6 mb-2`;
+      const gridCols = cols > 4 ? Math.ceil(cols / 2) : cols;
+      const gridRows = cols > 4 ? 2 : 1;
+      zonesArea.style.gridTemplateColumns = `repeat(${gridCols}, minmax(0, 1fr))`;
+      zonesArea.style.gridTemplateRows = `repeat(${gridRows}, minmax(0, 1fr))`;
+
+      config.zones.forEach(z => {
+        const el = document.createElement('div');
+        el.className = 'zone bg-white/85 rounded-[1rem] md:rounded-3xl border-2 md:border-4 border-white shadow-lg md:shadow-xl p-2 md:p-4 lg:p-6 flex flex-col transition-all min-h-0 h-full';
+        el.dataset.zoneId = z.id;
+        el.innerHTML = `
+          <div class="flex flex-col sm:flex-row items-center sm:items-start md:items-center gap-1 sm:gap-2 md:gap-4 shrink-0">
+            <div class="w-12 h-10 sm:w-16 sm:h-12 md:w-24 md:h-20 lg:w-28 lg:h-24 overflow-hidden rounded-lg md:rounded-2xl bg-white/70 border shrink-0 flex items-center justify-center p-0.5 md:p-1 lg:p-2">
+              <img src="${z.imageData || ''}" class="max-w-full max-h-full object-contain"/>
+            </div>
+            <div class="zone-title text-slate-800 font-extrabold text-center sm:text-left leading-tight w-full truncate">${z.name}</div>
+          </div>
+          <div class="mt-2 md:mt-3 lg:mt-4 flex-1 rounded-xl md:rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50/70 p-1.5 md:p-3 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-1.5 md:gap-2 overflow-y-auto no-scrollbar items-start content-start" data-zone-drop></div>
+        `;
+        zonesArea.appendChild(el);
+      });
+      const trayInner = $('#itemsTrayInner');
+      trayInner.innerHTML = '';
+      config.items.forEach(item => {
+        if (!config.zones.find(z => z.id === item.correctZoneId)) return;
+        if (state.locked[item.id] && state.placements[item.id]) {
+          placeItemInZone(item, state.placements[item.id], false);
+          return;
+        }
+        const card = document.createElement('div');
+        card.className = 'item-card bg-white rounded-xl md:rounded-2xl border-2 border-white shadow-md hover:shadow-lg p-1.5 md:px-3 md:py-2 lg:px-4 lg:py-3 flex flex-col sm:flex-row items-center justify-center sm:justify-start gap-1 md:gap-3 cursor-grab active:cursor-grabbing hover:scale-[1.02] transition-transform select-none w-20 sm:w-28 md:w-auto md:min-w-[180px] xl:min-w-[220px] max-w-[280px]';
+        card.dataset.itemId = item.id;
+        card.innerHTML = `
+          <div class="w-12 h-10 sm:w-16 sm:h-12 md:w-24 md:h-20 xl:w-28 xl:h-24 overflow-hidden rounded-lg md:rounded-2xl bg-slate-50 border pointer-events-none shrink-0 flex items-center justify-center p-0.5 md:p-1 lg:p-2">
+            <img src="${item.imageData || ''}" class="max-w-full max-h-full object-contain"/>
+          </div>
+          <div class="item-name text-slate-800 font-extrabold pointer-events-none text-center sm:text-left leading-tight w-full truncate px-1">${item.name}</div>
+        `;
+        trayInner.appendChild(card);
+        makeDraggable(card, item);
+      });
+      checkFinish();
+    }
+
+    function handleItemDrop(item, card, zone, point) {
+      if (zone) {
+        const zoneId = zone.dataset.zoneId;
+        if (item.correctZoneId === zoneId) {
+          state.score += GAME_RULES.SCORE_PER_ITEM;
+          state.locked[item.id] = true;
+          state.placements[item.id] = zoneId;
+          updateScoreUI();
+          placeItemInZone(item, zoneId, true);
+          celebrateAt(point.x, point.y);
+          card.remove(); 
+      
+          checkFinish();
+        } else {
+          showToast(GAME_RULES.MSG_WRONG);
+          shakeCard(card);
+        }
+      } else {
+        shakeCard(card);
+      }
+      saveState();
+    }
+
+    function placeItemInZone(item, zoneId, animate = true) {
+      const zone = $(`.zone[data-zone-id="${zoneId}"]`);
+      if (!zone) return;
+      const drop = zone.querySelector('[data-zone-drop]');
+      const mini = document.createElement('div');
+      mini.className = `bg-gradient-to-br from-white to-emerald-50 rounded-lg md:rounded-2xl border-2 border-emerald-200 shadow p-1 md:p-2 lg:p-3 flex flex-col xl:flex-row items-center justify-center xl:justify-start gap-1 md:gap-2 lg:gap-3 ${animate ? 'correct-anim' : ''} w-full`;
+      mini.innerHTML = `
+        <div class="w-8 h-8 sm:w-10 sm:h-10 md:w-16 md:h-16 lg:w-20 lg:h-20 overflow-hidden rounded-md md:rounded-xl bg-white border shrink-0 flex items-center justify-center p-0.5 md:p-1">
+          <img src="${item.imageData || ''}" class="max-w-full max-h-full object-contain"/>
+        </div>
+        <div class="text-emerald-700 font-extrabold text-[10px] sm:text-xs md:text-base lg:text-lg leading-tight text-center xl:text-left truncate w-full">${item.name}</div>
+      `;
+      drop.appendChild(mini);
+      if(animate) { zone.classList.remove('zone-glow-anim'); void zone.offsetWidth; zone.classList.add('zone-glow-anim'); }
+    }
+
+    function updateScoreUI() {
+      const scoreEl = $('#score');
+      scoreEl.textContent = state.score;
+      scoreEl.parentElement.classList.add('scale-110', 'text-fuchsia-600');
+      setTimeout(() => scoreEl.parentElement.classList.remove('scale-110', 'text-fuchsia-600'), 200);
+    }
+
+    // ===== 3. 優化 Pointer Events 拖曳引擎（支援大螢幕觸控板） =====
+    function makeDraggable(card, item) {
+      let dragging = false, ghost = null, startX = 0, startY = 0, currentX = 0, currentY = 0, ticking = false;
+      // 改用 PointerEvent 以兼容大螢幕觸控與滑鼠
+      const onDown = (e) => {
+        if (e.target.tagName.toLowerCase() === 'button') return;
+        dragging = true;
+        // PointerEvent 直接帶有 clientX / clientY
+        const pt = { x: e.clientX, y: e.clientY };
+        const rect = card.getBoundingClientRect();
+        startX = pt.x; startY = pt.y; currentX = pt.x; currentY = pt.y;
+        
+        ghost = card.cloneNode(true);
+        ghost.classList.remove('transition-transform', 'hover:scale-[1.02]');
+        ghost.style.transition = 'none';
+        ghost.classList.add('dragging', 'ring-4', 'ring-fuchsia-400');
+        ghost.style.left = rect.left + 'px'; ghost.style.top = rect.top + 'px';
+        ghost.style.width = rect.width + 'px'; ghost.style.height = rect.height + 'px';
+        
+        document.body.appendChild(ghost); 
+        card.style.opacity = '0.3';
+        
+        window.addEventListener('pointermove', onMove, {passive: false});
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
+        updateGhost();
+      };
+      
+      const updateGhost = () => {
+        if (!dragging || !ghost) return;
+        const dx = currentX - startX, dy = currentY - startY;
+        ghost.style.transform = `translate3d(${dx}px, ${dy}px, 0) scale(1.08) rotate(-4deg)`;
+        ticking = false; 
+      };
+      
+      const onMove = (e) => {
+        if (!dragging) return;
+        e.preventDefault(); // 防止畫面滾動
+        currentX = e.clientX; currentY = e.clientY;
+        if (!ticking) { requestAnimationFrame(updateGhost);
+        ticking = true; }
+      };
+      const onUp = (e) => {
+        if (!dragging) return; 
+        dragging = false;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        window.removeEventListener('pointercancel', onUp);
+        
+        const pt = { x: e.clientX, y: e.clientY }; 
+        const zone = getZoneUnderPoint(pt.x, pt.y);
+        handleItemDrop(item, card, zone, pt);
+        
+        if (ghost) { ghost.remove(); ghost = null;
+        }
+        card.style.opacity = '1';
+      };
+      // 綁定 pointerdown 替代 mousedown/touchstart
+      card.addEventListener('pointerdown', onDown);
+    }
+
+    function getZoneUnderPoint(x, y) {
+      return $$('.zone').find(z => {
+        const r = z.getBoundingClientRect();
+        return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+      });
+    }
+    function shakeCard(card) { card.classList.remove('wrong-anim'); void card.offsetWidth; card.classList.add('wrong-anim');
+    }
+    function showToast(msg) {
+      const t = $('#toast'); t.textContent = msg; t.classList.remove('hidden');
+      t.style.transform = 'translate(-50%, 20px)'; t.style.opacity = '0';
+      requestAnimationFrame(() => { t.style.transition = 'all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275)'; t.style.transform = 'translate(-50%, 0)'; t.style.opacity = '1'; });
+      if(t.hideTimeout) clearTimeout(t.hideTimeout);
+      t.hideTimeout = setTimeout(() => {
+        t.style.transform = 'translate(-50%, -20px)'; t.style.opacity = '0';
+        setTimeout(() => t.classList.add('hidden'), 300);
+      }, 1500);
+    }
+
+    // ===== 4. 計時與完成 =====
+    let timerInt = null;
+    function startTimer() {
+      if (timerInt) return;
+      if (!state.timerStart) state.timerStart = Date.now() - state.elapsed;
+      timerInt = setInterval(() => { $('#timer').textContent = formatTime(getElapsed()); }, 500);
+    }
+    function stopTimer() { if(timerInt) clearInterval(timerInt);
+    timerInt = null; if(state.timerStart) state.elapsed = getElapsed(); }
+    function getElapsed() { return state.timerStart ?
+    Date.now() - state.timerStart : state.elapsed; }
+    function formatTime(ms) {
+      const sec = Math.floor(ms/1000);
+      return `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`;
+    }
+    function checkFinish() {
+      const activeItems = config.items.filter(it => config.zones.some(z => z.id === it.correctZoneId));
+      const total = activeItems.length, done = Object.keys(state.locked).length;
+      if (total > 0 && done >= total && !state.finished) {
+        state.finished = true;
+        stopTimer();
+        $('#finalScore').textContent = state.score; $('#finalTime').textContent = formatTime(getElapsed());
+        $('#finishModal').classList.remove('hidden'); saveState();
+      }
+    }
+    function resetGame() {
+      state = structuredClone(defaultState);
+      stopTimer();
+      $('#timer').textContent = '00:00'; $('#score').textContent = '0';
+      $('#finishModal').classList.add('hidden'); renderPlay(); startTimer(); saveState();
+    }
+    
+    // 加大字體級距以支援大螢幕
+    function applyTextSize(size) {
+      config.textSize = size;
+      const map = { 
+        'S':['text-xs sm:text-sm md:text-xl lg:text-2xl', 'text-sm sm:text-lg md:text-2xl lg:text-3xl'], 
+        'M':['text-sm sm:text-base md:text-2xl lg:text-3xl', 'text-base sm:text-xl md:text-3xl lg:text-4xl'], 
+        'L':['text-base sm:text-lg md:text-3xl lg:text-4xl', 'text-lg sm:text-2xl md:text-4xl lg:text-5xl'] 
+      };
+      const [itemCls, titleCls] = map[size];
+      $$('.item-name').forEach(e => { e.className = `item-name font-extrabold text-slate-800 pointer-events-none text-center sm:text-left leading-tight w-full truncate px-1 ${itemCls}`; });
+      $$('.zone-title').forEach(e => { e.className = `zone-title font-extrabold text-slate-800 text-center sm:text-left leading-tight w-full truncate ${titleCls}`; });
+      $$('.size-btn').forEach(b => { b.classList.toggle('bg-slate-900', b.dataset.size === size); b.classList.toggle('text-white', b.dataset.size === size); });
+      saveConfig();
+    }
+
+    // ===== 5. CMS 管理 =====
+    function renderCMS() { renderCMSZones(); renderCMSItems();
+    $('#titleInput').value = config.gameTitle; }
+    function renderCMSZones() {
+      const list = $('#zonesList');
+      list.innerHTML = '';
+      config.zones.forEach(z => {
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-2 md:gap-3 bg-white p-2 md:p-3 rounded-xl border shadow-sm transition-shadow hover:shadow-md min-w-0';
+        div.innerHTML = `
+          <div class="w-12 h-12 md:w-16 md:h-16 rounded object-contain p-1 bg-gray-100 shrink-0 border flex items-center justify-center"><img src="${z.imageData}" class="max-w-full max-h-full object-contain"></div>
+          <div class="flex-1 min-w-0"><input value="${z.name}" placeholder="名稱" class="z-name w-full border border-slate-200 rounded p-1.5 md:p-2 text-sm md:text-base lg:text-lg font-bold"></div>
+          <div class="flex flex-col gap-1 md:gap-2 shrink-0">
+             <label class="text-[10px] md:text-xs lg:text-sm bg-sky-100 text-sky-700 px-2 py-1 lg:px-4 lg:py-2 rounded cursor-pointer text-center font-bold">換圖<input type="file" class="hidden z-img" accept="image/*"></label>
+             <button class="z-del text-[10px] md:text-xs lg:text-sm bg-rose-100 text-rose-700 px-2 py-1 lg:px-4 lg:py-2 rounded font-bold">刪除</button>
+          </div>`;
+        div.querySelector('.z-name').oninput = (e) => { z.name = e.target.value || '未命名'; saveConfig(true); };
+        div.querySelector('.z-img').onchange = (e) => loadImageFile(e.target, d => { z.imageData = d; saveConfig(true); renderCMSZones(); });
+        div.querySelector('.z-del').onclick = () => {
+          if(confirm(`確定刪除「${z.name}」？`)) {
+             config.zones = config.zones.filter(x => x.id !== z.id);
+             config.items.forEach(it => { if (it.correctZoneId === z.id) it.correctZoneId = null; });
+             saveConfig(true); renderCMS();
+          }
+        };
+        list.appendChild(div);
+      });
+    }
+    function renderCMSItems() {
+      const list = $('#itemsList'); list.innerHTML = '';
+      config.items.forEach(it => {
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-2 md:gap-3 bg-white p-2 md:p-3 rounded-xl border shadow-sm transition-shadow hover:shadow-md min-w-0';
+        let opts = config.zones.map(z => `<option value="${z.id}" ${z.id===it.correctZoneId?'selected':''}>${z.name}</option>`).join('');
+        div.innerHTML = `
+          <div class="w-12 h-12 md:w-16 md:h-16 rounded object-contain p-1 bg-gray-100 shrink-0 border flex items-center justify-center"><img src="${it.imageData}" class="max-w-full max-h-full object-contain"></div>
+          <div class="flex-1 grid gap-1 md:gap-2 min-w-0">
+            <input value="${it.name}" placeholder="名稱" class="i-name w-full border border-slate-200 rounded p-1 md:p-1.5 lg:p-2 text-sm md:text-base lg:text-lg font-bold">
+            <select class="i-zone w-full border border-slate-200 rounded p-1 md:p-1.5 lg:p-2 text-xs md:text-sm lg:text-base font-bold text-slate-700">${opts}</select>
+          </div>
+          <div class="flex flex-col gap-1 md:gap-2 shrink-0">
+             <label class="text-[10px] md:text-xs lg:text-sm bg-fuchsia-100 text-fuchsia-700 px-2 py-1 lg:px-4 lg:py-2 rounded cursor-pointer text-center font-bold">換圖<input type="file" class="hidden i-img" accept="image/*"></label>
+             <button class="i-del text-[10px] md:text-xs lg:text-sm bg-rose-100 text-rose-700 px-2 py-1 lg:px-4 lg:py-2 rounded font-bold">刪除</button>
+          </div>`;
+        div.querySelector('.i-name').oninput = (e) => { it.name = e.target.value || '未命名'; saveConfig(true); };
+        div.querySelector('.i-zone').onchange = (e) => { it.correctZoneId = e.target.value;
+        saveConfig(true); };
+        div.querySelector('.i-img').onchange = (e) => loadImageFile(e.target, d => { it.imageData = d; saveConfig(true); renderCMSItems(); });
+        div.querySelector('.i-del').onclick = () => { if(confirm(`確定刪除項目？`)) { config.items = config.items.filter(x => x.id !== it.id); saveConfig(true); renderCMSItems(); } };
+        list.appendChild(div);
+      });
+    }
+
+    function loadTextFile(input, cb) {
+      const f = input.files[0]; if(!f) return;
+      const fr = new FileReader(); fr.onload = (e) => cb(e.target.result); fr.readAsText(f);
+    }
+    function showSavedPulse() { $('#saveIndicator').style.opacity = '1'; setTimeout(() => $('#saveIndicator').style.opacity = '0', 800);
+    }
+    function celebrateAt(x, y) {
+      const container = $('#confetti');
+      for(let i=0; i<15; i++) {
+        const d = document.createElement('div');
+        d.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:12px;height:12px;background:hsl(${Math.random()*360},70%,50%);border-radius:2px;pointer-events:none;`;
+        const angle = Math.random() * Math.PI * 2, velocity = 50 + Math.random() * 100;
+        const tx = Math.cos(angle) * velocity, ty = Math.sin(angle) * velocity - 150;
+        d.animate([ {transform:'translate(0,0) rotate(0deg)', opacity:1}, {transform:`translate(${tx}px, ${ty}px) rotate(${Math.random()*360+180}deg)`, opacity:0} ], {duration: 800 + Math.random()*400, easing:'ease-out'}).onfinish = () => d.remove();
+        container.appendChild(d);
+      }
+    }
+
+    // ===== 6. 事件綁定與雲端匯入 =====
+    document.addEventListener('DOMContentLoaded', () => {
+      applyGameTitle();
+      $('#titleInput').oninput = (e) => { config.gameTitle = e.target.value || '【文特知識王】'; applyGameTitle(); saveConfig(); };
+      $('#tabPlay').onclick = () => { state.mode = 'play'; $('#playView').classList.remove('hidden'); $('#adminView').classList.add('hidden'); $('#tabPlay').dataset.active = 'true'; $('#tabAdmin').dataset.active = 'false'; $$('.play-only').forEach(e=>e.classList.remove('hidden')); $$('.admin-only').forEach(e=>e.classList.add('hidden')); renderPlay(); startTimer(); };
+      $('#tabAdmin').onclick = () => { state.mode = 'admin'; $('#playView').classList.add('hidden'); $('#adminView').classList.remove('hidden'); $('#tabPlay').dataset.active = 'false'; $('#tabAdmin').dataset.active = 'true'; $$('.play-only').forEach(e=>e.classList.add('hidden')); $$('.admin-only').forEach(e=>e.classList.remove('hidden')); stopTimer(); renderCMS(); };
+     
+      $$('.admin-nav').forEach(btn => btn.onclick = () => {
+        $$('.cms-section').forEach(s => s.classList.add('hidden'));
+        $(`#cms${btn.dataset.adminSection.charAt(0).toUpperCase()+btn.dataset.adminSection.slice(1)}`).classList.remove('hidden');
+        $$('.admin-nav').forEach(b => { b.classList.remove('bg-sky-100','text-sky-800'); if(b===btn) b.classList.add('bg-sky-100','text-sky-800'); });
+      });
+      $('#resetBtn').onclick = resetGame; $('#playAgain').onclick = resetGame; $('#closeModal').onclick = () => $('#finishModal').classList.add('hidden');
+      $$('.size-btn').forEach(b => b.onclick = () => applyTextSize(b.dataset.size));
+      $('#addZone').onclick = () => { config.zones.push({id:uid(), name:'新分類', imageData:''}); saveConfig(true); renderCMS(); };
+      $('#addItem').onclick = () => { if(config.zones.length === 0) { alert('請先新增分類！'); return; } config.items.push({id:uid(), name:'新項目', imageData:'', correctZoneId:config.zones[0]?.id}); saveConfig(true); renderCMS(); };
+      $('#clearAllBtn').onclick = () => { if(confirm('確定清除所有資料？')) { localStorage.clear(); location.reload(); } };
+      $('#exportBtn').onclick = () => { const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(config)], {type:'application/json'})); a.download = 'config.json'; a.click(); };
+      $('#importInput').onchange = (e) => {
+         loadTextFile(e.target, txt => { try { config = JSON.parse(txt); saveConfig(true); location.reload(); } catch(err){ alert('格式錯誤'); } });
+      };
+
+      // 雲端匯入異步邏輯
+      $('#cloudImportSelect').onchange = async (e) => {
+        const filename = e.target.value;
+        if (!filename) return;
+        if (!confirm(`確定載入雲端題庫？目前的遊戲進度與設定將會被覆蓋。`)) {
+          e.target.value = "";
+          return;
+        }
+        try {
+          const response = await fetch(filename);
+          if (!response.ok) throw new Error('找不到檔案');
+          const data = await response.json();
+          config = data;
+          saveConfig(true);
+          alert('✅ 雲端題庫載入成功！');
+          location.reload();
+        } catch (error) {
+          alert('❌ 載入失敗，請確認檔案已正確上傳至 GitHub。');
+          console.error(error);
+          e.target.value = "";
+        }
+      };
+
+      if(state.mode === 'play') $('#tabPlay').click(); else $('#tabAdmin').click();
+    });
+  </script>
+ </body>
+</html>
