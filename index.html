@@ -80,6 +80,7 @@
       
       <div class="h-14 md:h-20 flex items-center justify-between px-3 md:px-10 z-50 shrink-0">
        <div class="flex items-center gap-2 md:gap-4 w-full md:w-auto overflow-hidden">
+ 
         <div id="mainTitle" class="text-white/90 bg-gradient-to-r from-fuchsia-500 to-rose-500 px-3 py-1.5 md:px-5 md:py-2 rounded-lg md:rounded-2xl shadow-lg text-base md:text-2xl lg:text-3xl font-extrabold tracking-wide truncate max-w-[140px] sm:max-w-xs md:max-w-none">
           【文特知識王】
         </div>
@@ -161,16 +162,26 @@
                   <input id="titleInput" type="text" class="flex-1 max-w-md border border-slate-300 focus:border-sky-500 outline-none rounded-lg p-2 text-base font-bold transition-colors">
                 </div>
               </div>
+              
               <div class="bg-sky-50 rounded-xl border border-sky-200 p-4 shadow-sm">
-                <h3 class="text-lg font-bold text-sky-800 mb-4 flex items-center gap-2">☁️ 雲端題庫快速載入</h3>
+                <h3 class="text-lg font-bold text-sky-800 mb-4 flex items-center gap-2">☁️ GitHub 雲端題庫快速載入</h3>
+                
+                <div class="flex flex-col gap-3 mb-3">
+                  <div class="flex flex-col md:flex-row items-center gap-2">
+                    <input id="ghOwnerInput" type="text" placeholder="GitHub 帳號 (例如: username)" class="w-full md:w-1/3 border border-sky-300 focus:border-sky-500 outline-none rounded-lg p-2 text-base font-bold text-slate-700 transition-colors">
+                    <span class="text-slate-500 font-bold hidden md:inline">/</span>
+                    <input id="ghRepoInput" type="text" placeholder="儲存庫名稱 (例如: repo-name)" class="w-full md:w-1/3 border border-sky-300 focus:border-sky-500 outline-none rounded-lg p-2 text-base font-bold text-slate-700 transition-colors">
+                    <button id="ghFetchBtn" class="w-full md:w-auto px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-600 text-white font-bold shadow transition-colors whitespace-nowrap">🔍 取得題庫清單</button>
+                  </div>
+                </div>
+
                 <div class="flex flex-col md:flex-row items-center gap-3">
-                  <select id="cloudImportSelect" class="w-full md:flex-1 border border-sky-300 outline-none rounded-lg p-2 text-base font-bold text-slate-700 cursor-pointer hover:bg-white transition-colors shadow-inner">
-                    <option value="">-- 請選擇 GitHub 上的題庫檔案 --</option>
-                    <option value="拖曳遊戲水果動物交通3X2(11502).json">水果動物交通 (3X2 版)</option>
-                    <option value="拖曳遊戲水果動物交通3X4(1150428).json">水果動物交通 (3X4 版)</option>
+                  <select id="cloudImportSelect" class="w-full border border-sky-300 outline-none rounded-lg p-2 text-base font-bold text-slate-700 cursor-pointer hover:bg-white transition-colors shadow-inner" disabled>
+                    <option value="">-- 請先輸入帳號與儲存庫並點擊「取得題庫清單」 --</option>
                   </select>
                 </div>
               </div>
+
               <div class="bg-white rounded-xl border p-4 shadow-sm">
                 <h3 class="text-lg font-bold text-slate-800 mb-4">資料備份與重置</h3>
                 <div class="flex flex-col md:flex-row gap-3">
@@ -238,11 +249,11 @@
       ]
     };
     const defaultState = { mode: 'play', score: 0, locked: {}, placements: {}, timerStart: null, elapsed: 0, finished: false };
-    
     function saveConfig(forceResetState = false) { 
       localStorage.setItem(LS_KEY, JSON.stringify(config)); 
       showSavedPulse();
-      if (forceResetState) { state = structuredClone(defaultState); saveState(); }
+      if (forceResetState) { state = structuredClone(defaultState);
+      saveState(); }
     }
     function saveState() { localStorage.setItem(LS_STATE, JSON.stringify(state)); }
     function loadAll() {
@@ -254,7 +265,6 @@
     }
 
     let { conf: config, st: state } = loadAll();
-
     function compressImage(base64Str, maxWidth, maxHeight, callback) {
       const img = new Image();
       img.onload = () => {
@@ -273,7 +283,8 @@
     }
 
     function loadImageFile(input, cb) {
-      const f = input.files[0]; if(!f) return;
+      const f = input.files[0];
+      if(!f) return;
       const fr = new FileReader();
       fr.onload = (e) => { compressImage(e.target.result, 400, 400, cb); };
       fr.readAsDataURL(f);
@@ -305,14 +316,12 @@
       if (cols === 0) { gridCols = 1; gridRows = 1; }
       zonesArea.style.gridTemplateColumns = `repeat(${gridCols}, minmax(0, 1fr))`;
       zonesArea.style.gridTemplateRows = `repeat(${gridRows}, minmax(0, 1fr))`;
-
       config.zones.forEach(z => {
         const el = document.createElement('div');
         el.className = 'zone bg-white/85 rounded-xl md:rounded-[2rem] border-2 md:border-4 border-white shadow-lg p-1 md:p-3 flex flex-col min-h-0 h-full overflow-hidden';
         el.dataset.zoneId = z.id;
         
         // --- [動態縮放 2] 每個分類內部的放置區網格計算 ---
-        // 確保剛好切出能放下該區域所有正確答案的格子
         const itemsForZone = config.items.filter(it => it.correctZoneId === z.id).length || 1;
         let dropCols = Math.ceil(Math.sqrt(itemsForZone));
         let dropRows = Math.ceil(itemsForZone / dropCols);
@@ -332,9 +341,8 @@
       const activeItems = config.items.filter(item => config.zones.find(z => z.id === item.correctZoneId));
       
       // --- [動態縮放 3] 底部托盤的總項目網格計算 ---
-      // 根據遊戲開始時總共要配對的項目數，固定托盤大小
       const totalItems = activeItems.length || 1;
-      let trayCols = Math.ceil(Math.sqrt(totalItems * 2.5)); // 傾向橫向排列
+      let trayCols = Math.ceil(Math.sqrt(totalItems * 2.5)); 
       let trayRows = Math.ceil(totalItems / trayCols);
       if(trayCols === 0) trayCols = 1; if(trayRows === 0) trayRows = 1;
 
@@ -350,7 +358,6 @@
           return;
         }
         
-        // 製作自動填滿格子的卡片
         const card = document.createElement('div');
         card.className = 'item-card bg-white rounded-lg border border-slate-200 shadow p-1 flex flex-col items-center justify-center gap-1 cursor-grab active:cursor-grabbing hover:scale-[1.02] transition-transform select-none w-full h-full min-h-0 min-w-0';
         card.dataset.itemId = item.id;
@@ -378,8 +385,7 @@
           updateScoreUI();
           placeItemInZone(item, zoneId, true);
           celebrateAt(point.x, point.y);
-          // 這裡不是 remove，而是把內容清空保留格子以維持 Grid 比例不跑位
-          card.style.visibility = 'hidden'; 
+          card.style.visibility = 'hidden';
           checkFinish();
         } else {
           showToast(GAME_RULES.MSG_WRONG);
@@ -396,8 +402,6 @@
       if (!zone) return;
       const drop = zone.querySelector('[data-zone-drop]');
       const mini = document.createElement('div');
-      
-      // 放置到小區塊內自動充滿整個分配到的網格
       mini.className = `bg-gradient-to-br from-white to-emerald-50 rounded-md md:rounded-lg border border-emerald-200 shadow-sm p-0.5 md:p-1 flex flex-col items-center justify-center gap-0.5 ${animate ? 'correct-anim' : ''} w-full h-full min-h-0 min-w-0 overflow-hidden`;
       mini.innerHTML = `
         <div class="flex-1 w-full min-h-0 overflow-hidden rounded bg-white border shrink flex items-center justify-center p-0.5">
@@ -424,7 +428,8 @@
         dragging = true;
         const pt = { x: e.clientX, y: e.clientY };
         const rect = card.getBoundingClientRect();
-        startX = pt.x; startY = pt.y; currentX = pt.x; currentY = pt.y;
+        startX = pt.x;
+        startY = pt.y; currentX = pt.x; currentY = pt.y;
         
         ghost = card.cloneNode(true);
         ghost.classList.remove('transition-transform', 'hover:scale-[1.02]');
@@ -432,7 +437,6 @@
         ghost.classList.add('dragging', 'ring-4', 'ring-fuchsia-400');
         ghost.style.left = rect.left + 'px'; ghost.style.top = rect.top + 'px';
         ghost.style.width = rect.width + 'px'; ghost.style.height = rect.height + 'px';
-        
         document.body.appendChild(ghost); 
         card.style.opacity = '0.1';
         
@@ -441,7 +445,6 @@
         window.addEventListener('pointercancel', onUp);
         updateGhost();
       };
-      
       const updateGhost = () => {
         if (!dragging || !ghost) return;
         const dx = currentX - startX, dy = currentY - startY;
@@ -454,16 +457,17 @@
         e.preventDefault();
         currentX = e.clientX; currentY = e.clientY;
         if (!ticking) { requestAnimationFrame(updateGhost);
-        ticking = true; }
+        ticking = true;
+        }
       };
       const onUp = (e) => {
-        if (!dragging) return; 
+        if (!dragging) return;
         dragging = false;
         window.removeEventListener('pointermove', onMove);
         window.removeEventListener('pointerup', onUp);
         window.removeEventListener('pointercancel', onUp);
         
-        const pt = { x: e.clientX, y: e.clientY }; 
+        const pt = { x: e.clientX, y: e.clientY };
         const zone = getZoneUnderPoint(pt.x, pt.y);
         handleItemDrop(item, card, zone, pt);
         
@@ -500,7 +504,8 @@
     }
     function stopTimer() { if(timerInt) clearInterval(timerInt);
     timerInt = null; if(state.timerStart) state.elapsed = getElapsed(); }
-    function getElapsed() { return state.timerStart ? Date.now() - state.timerStart : state.elapsed; }
+    function getElapsed() { return state.timerStart ?
+    Date.now() - state.timerStart : state.elapsed; }
     function formatTime(ms) {
       const sec = Math.floor(ms/1000);
       return `${String(Math.floor(sec/60)).padStart(2,'0')}:${String(sec%60).padStart(2,'0')}`;
@@ -538,9 +543,11 @@
     }
 
     // ===== 5. CMS 管理 =====
-    function renderCMS() { renderCMSZones(); renderCMSItems(); $('#titleInput').value = config.gameTitle; }
+    function renderCMS() { renderCMSZones(); renderCMSItems();
+    $('#titleInput').value = config.gameTitle; }
     function renderCMSZones() {
-      const list = $('#zonesList'); list.innerHTML = '';
+      const list = $('#zonesList');
+      list.innerHTML = '';
       config.zones.forEach(z => {
         const div = document.createElement('div');
         div.className = 'flex items-center gap-2 md:gap-3 bg-white p-2 md:p-3 rounded-xl border shadow-sm transition-shadow hover:shadow-md min-w-0';
@@ -580,7 +587,8 @@
              <button class="i-del text-[10px] md:text-xs lg:text-sm bg-rose-100 text-rose-700 px-2 py-1 lg:px-4 lg:py-2 rounded font-bold">刪除</button>
           </div>`;
         div.querySelector('.i-name').oninput = (e) => { it.name = e.target.value || '未命名'; saveConfig(true); };
-        div.querySelector('.i-zone').onchange = (e) => { it.correctZoneId = e.target.value; saveConfig(true); };
+        div.querySelector('.i-zone').onchange = (e) => { it.correctZoneId = e.target.value;
+        saveConfig(true); };
         div.querySelector('.i-img').onchange = (e) => loadImageFile(e.target, d => { it.imageData = d; saveConfig(true); renderCMSItems(); });
         div.querySelector('.i-del').onclick = () => { if(confirm(`確定刪除項目？`)) { config.items = config.items.filter(x => x.id !== it.id); saveConfig(true); renderCMSItems(); } };
         list.appendChild(div);
@@ -591,7 +599,8 @@
       const f = input.files[0]; if(!f) return;
       const fr = new FileReader(); fr.onload = (e) => cb(e.target.result); fr.readAsText(f);
     }
-    function showSavedPulse() { $('#saveIndicator').style.opacity = '1'; setTimeout(() => $('#saveIndicator').style.opacity = '0', 800); }
+    function showSavedPulse() { $('#saveIndicator').style.opacity = '1'; setTimeout(() => $('#saveIndicator').style.opacity = '0', 800);
+    }
     function celebrateAt(x, y) {
       const container = $('#confetti');
       for(let i=0; i<15; i++) {
@@ -627,17 +636,81 @@
          loadTextFile(e.target, txt => { try { config = JSON.parse(txt); saveConfig(true); location.reload(); } catch(err){ alert('格式錯誤'); } });
       };
 
-      $('#cloudImportSelect').onchange = async (e) => {
-        const filename = e.target.value;
-        if (!filename) return;
-        if (!confirm(`確定載入雲端題庫？目前的遊戲進度與設定將會被覆蓋。`)) { e.target.value = ""; return; }
+      // --- GitHub API 題庫清單抓取邏輯 ---
+      const savedOwner = localStorage.getItem('wtkw_gh_owner');
+      const savedRepo = localStorage.getItem('wtkw_gh_repo');
+      if(savedOwner) $('#ghOwnerInput').value = savedOwner;
+      if(savedRepo) $('#ghRepoInput').value = savedRepo;
+
+      $('#ghFetchBtn').onclick = async () => {
+        const owner = $('#ghOwnerInput').value.trim();
+        const repo = $('#ghRepoInput').value.trim();
+        const select = $('#cloudImportSelect');
+        
+        if (!owner || !repo) {
+          alert('請輸入 GitHub 帳號與儲存庫名稱！');
+          return;
+        }
+
+        select.innerHTML = '<option value="">⏳ 正在載入檔案清單...</option>';
+        select.disabled = true;
+
         try {
-          const response = await fetch(filename);
-          if (!response.ok) throw new Error('找不到檔案');
+          const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/`);
+          if (!response.ok) throw new Error('找不到儲存庫或 API 限制');
+          
           const data = await response.json();
-          config = data; saveConfig(true); alert('✅ 雲端題庫載入成功！'); location.reload();
+          const jsonFiles = data.filter(item => item.type === 'file' && item.name.endsWith('.json'));
+
+          if (jsonFiles.length === 0) {
+            select.innerHTML = '<option value="">⚠️ 該儲存庫中沒有找到 .json 檔案</option>';
+            return;
+          }
+
+          select.innerHTML = '<option value="">-- 請選擇要載入的題庫檔案 --</option>';
+          jsonFiles.forEach(file => {
+            const opt = document.createElement('option');
+            opt.value = file.download_url;
+            opt.textContent = file.name;
+            select.appendChild(opt);
+          });
+          select.disabled = false;
+          
+          localStorage.setItem('wtkw_gh_owner', owner);
+          localStorage.setItem('wtkw_gh_repo', repo);
+
         } catch (error) {
-          alert('❌ 載入失敗，請確認檔案已正確上傳至 GitHub。'); console.error(error); e.target.value = "";
+          alert('❌ 取得清單失敗，請檢查帳號、儲存庫名稱是否正確，或確認該儲存庫為公開(Public)狀態。');
+          console.error(error);
+          select.innerHTML = '<option value="">-- 取得清單失敗 --</option>';
+        }
+      };
+
+      // --- 選擇並載入指定的 JSON 題庫 ---
+      $('#cloudImportSelect').onchange = async (e) => {
+        const fileUrl = e.target.value;
+        if (!fileUrl) return;
+        
+        const filename = e.target.options[e.target.selectedIndex].text;
+
+        if (!confirm(`確定載入「${filename}」？\n目前的遊戲進度與設定將會被覆蓋！`)) { 
+          e.target.value = ""; 
+          return;
+        }
+        
+        try {
+          const response = await fetch(fileUrl);
+          if (!response.ok) throw new Error('找不到檔案');
+          
+          const data = await response.json();
+          config = data; 
+          saveConfig(true); 
+          alert('✅ 雲端題庫載入成功！'); 
+          location.reload();
+        } catch (error) {
+          alert('❌ 載入失敗，請確認該檔案內容是正確的 JSON 格式。'); 
+          console.error(error); 
+          e.target.value = "";
         }
       };
 
